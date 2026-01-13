@@ -1,2 +1,2 @@
 # Kvartiralarborbot
-Kvartira ekinlarini berish uchun qulay va oson bot
+Kvartira elonlarini berish uchun qulay va oson bot
