@@ -1,12 +1,12 @@
 import asyncio
 import logging
-import os  # Tizim o'zgaruvchilarini to'g'ridan-to'g'ri o'qish uchun
+import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
 
-# PostgreSQL jadvallarini avtomatik yuklash
+# PostgreSQL ulanishi uchun kerakli narsalarni import qilamiz
 try:
     from app.database import engine, Base 
 except ImportError:
@@ -14,6 +14,15 @@ except ImportError:
         from app.db import engine, Base
     except ImportError:
         engine, Base = None, None
+
+# !!! MUHIM: Jadvallar bazada yaratilishi uchun modellarni majburlab import qilamiz !!!
+try:
+    from app import models
+except ImportError:
+    try:
+        from app.database import models
+    except ImportError:
+        pass
 
 from app.config import settings
 from app.handlers import start, listing, admin, profile
@@ -30,12 +39,13 @@ async def main():
     if engine and Base:
         try:
             async with engine.begin() as conn:
+                # Modellarni bazaga yozishni majburlaymiz
                 await conn.run_sync(Base.metadata.create_all)
-            logging.info("Ma'lumotlar bazasi jadvallari tekshirildi.")
+            logging.info("Ma'lumotlar bazasi jadvallari muvaffaqiyatli tekshirildi/yaratildi.")
         except Exception as e:
             logging.error(f"Jadvallarni yaratishda xato: {e}")
 
-    # 2. Redis parolini tizimdan majburiy (OS darajasida) o'qib olish
+    # 2. Redis ulanishi (OS darajasida xavfsiz va dinamik o'qish)
     redis_password = os.environ.get("REDIS_PASSWORD") or os.environ.get("REDISPASSWORD") or getattr(settings, "REDIS_PASSWORD", None)
 
     redis = Redis(
