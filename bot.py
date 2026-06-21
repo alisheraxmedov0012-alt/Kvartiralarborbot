@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os  # Tizim o'zgaruvchilarini to'g'ridan-to'g'ri o'qish uchun
+
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
@@ -33,11 +35,13 @@ async def main():
         except Exception as e:
             logging.error(f"Jadvallarni yaratishda xato: {e}")
 
-    # 2. Redis ulanishi (Parol muammoni hal qilish uchun matn ko'rinishida qo'yildi)
+    # 2. Redis parolini tizimdan majburiy (OS darajasida) o'qib olish
+    redis_password = os.environ.get("REDIS_PASSWORD") or os.environ.get("REDISPASSWORD") or getattr(settings, "REDIS_PASSWORD", None)
+
     redis = Redis(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,
-        password="f0dKePczEaiPomxEkXDCrraWDjbxSDlg",
+        password=redis_password if redis_password else None,
         decode_responses=True
     )
     
