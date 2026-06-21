@@ -33,13 +33,11 @@ async def main():
         except Exception as e:
             logging.error(f"Jadvallarni yaratishda xato: {e}")
 
-    # 2. Redis ulanishi (Railway o'zgaruvchilarini xavfsiz o'qish)
-    redis_password = getattr(settings, "REDIS_PASSWORD", getattr(settings, "REDISPASSWORD", None))
-
+    # 2. Redis ulanishi (Parol muammoni hal qilish uchun matn ko'rinishida qo'yildi)
     redis = Redis(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,
-        password=redis_password if redis_password else None,
+        password="f0dKePczEaiPomxEkXDCrraWDjbxSDlg",
         decode_responses=True
     )
     
