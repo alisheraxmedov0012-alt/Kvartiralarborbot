@@ -1,4 +1,5 @@
-from aiogram import Router, Command
+from aiogram import Router
+from aiogram.filters import Command
 from aiogram.types import Message
 from app.keyboards.user import main_menu
 from app.database.session import async_session
