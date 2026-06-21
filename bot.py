@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
 
-# PostgreSQL ulanishi uchun kerakli narsalarni import qilamiz
+# PostgreSQL uchun kerakli narsalarni yuklaymiz
 try:
     from app.database import engine, Base 
 except ImportError:
@@ -14,15 +14,6 @@ except ImportError:
         from app.db import engine, Base
     except ImportError:
         engine, Base = None, None
-
-# !!! MUHIM: Jadvallar bazada yaratilishi uchun modellarni majburlab import qilamiz !!!
-try:
-    from app import models
-except ImportError:
-    try:
-        from app.database import models
-    except ImportError:
-        pass
 
 from app.config import settings
 from app.handlers import start, listing, admin, profile
@@ -35,15 +26,26 @@ logging.basicConfig(
 )
 
 async def main():
-    # 1. PostgreSQL jadvallarini tekshirish va yaratish
-    if engine and Base:
+    # 1. SQL jadvalini majburiy ravishda xom SQL buyrug'i bilan yaratish
+    if engine:
         try:
+            from sqlalchemy import text
             async with engine.begin() as conn:
-                # Modellarni bazaga yozishni majburlaymiz
-                await conn.run_sync(Base.metadata.create_all)
-            logging.info("Ma'lumotlar bazasi jadvallari muvaffaqiyatli tekshirildi/yaratildi.")
+                await conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        id SERIAL PRIMARY KEY,
+                        telegram_id BIGINT UNIQUE NOT NULL,
+                        username VARCHAR(255),
+                        full_name VARCHAR(255),
+                        phone VARCHAR(50),
+                        referrer_id BIGINT,
+                        is_premium BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """))
+            logging.info("PostgreSQL 'users' jadvali majburan tekshirildi/yaratildi!")
         except Exception as e:
-            logging.error(f"Jadvallarni yaratishda xato: {e}")
+            logging.error(f"Jadval yaratishda SQL xatosi: {e}")
 
     # 2. Redis ulanishi (OS darajasida xavfsiz va dinamik o'qish)
     redis_password = os.environ.get("REDIS_PASSWORD") or os.environ.get("REDISPASSWORD") or getattr(settings, "REDIS_PASSWORD", None)
@@ -80,4 +82,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
