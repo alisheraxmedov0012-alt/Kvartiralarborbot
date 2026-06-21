@@ -16,12 +16,13 @@ logging.basicConfig(
 
 async def main():
     # Redis ulanishi
-        redis = Redis(
-        host=settings.REDIS_HOST, 
-        port=settings.REDIS_PORT, 
-        password=getattr(settings, "REDIS_PASSWORD", None), 
+    redis = Redis(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        password=getattr(settings, "REDIS_PASSWORD", None),
         decode_responses=True
-        )
+    )
+    
     storage = RedisStorage(redis)
 
     # Bot va Dispatcher obyektlari
@@ -38,7 +39,7 @@ async def main():
     dp.include_router(profile.router)
 
     logging.info("Bot muvaffaqiyatli ishga tushdi!")
-    
+
     try:
         await dp.start_polling(bot)
     finally:
@@ -47,4 +48,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-  
+    
