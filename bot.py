@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
 
-# PostgreSQL jadvallarini avtomatik yaratish uchun importlar
+# PostgreSQL jadvallarini avtomatik yuklash
 try:
     from app.database import engine, Base 
 except ImportError:
@@ -24,20 +24,22 @@ logging.basicConfig(
 )
 
 async def main():
-    # 1. PostgreSQL bazasida jadvallarni avtomatik yaratish qismi
+    # 1. PostgreSQL jadvallarini tekshirish va yaratish
     if engine and Base:
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            logging.info("Ma'lumotlar bazasi jadvallari muvaffaqiyatli tekshirildi/yaratildi.")
+            logging.info("Ma'lumotlar bazasi jadvallari tekshirildi.")
         except Exception as e:
-            logging.error(f"Jadvallarni yaratishda xatolik yuz berdi: {e}")
+            logging.error(f"Jadvallarni yaratishda xato: {e}")
 
-    # 2. Redis ulanishi (Parol to'g'ridan-to'g'ri matn shaklida berildi)
+    # 2. Redis ulanishi (Railway o'zgaruvchilarini xavfsiz o'qish)
+    redis_password = getattr(settings, "REDIS_PASSWORD", getattr(settings, "REDISPASSWORD", None))
+
     redis = Redis(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,
-        password="f0dKePczEaiPomxEkXDCrraWDjbxSDlg",
+        password=redis_password if redis_password else None,
         decode_responses=True
     )
     
