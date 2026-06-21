@@ -6,9 +6,33 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
 
-# 1. To'g'ri joydan engine va Base'ni import qilamiz
-from app.database import engine
-from app.database.models import Base  # Modellaringiz turgan Base'ni ulaymiz
+# Engine va Base importini xavfsiz (try-except) blokda qilamiz
+engine = None
+Base = None
+
+try:
+    from app.database import engine as eng
+    engine = eng
+except ImportError:
+    try:
+        from app.database.connection import engine as eng
+        engine = eng
+    except ImportError:
+        try:
+            from app.db import engine as eng
+            engine = eng
+        except ImportError:
+            pass
+
+try:
+    from app.database.models import Base as b_obj
+    Base = b_obj
+except ImportError:
+    try:
+        from app.database import Base as b_obj
+        Base = b_obj
+    except ImportError:
+        pass
 
 from app.config import settings
 from app.handlers import start, listing, admin, profile
@@ -21,15 +45,18 @@ logging.basicConfig(
 )
 
 async def main():
-    # 2. Baza jadvallarini avtomatik yaratish (Modellarni aniq ko'rgan holatda)
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logging.info("Barcha ma'lumotlar bazasi jadvallari (users, listings...) muvaffaqiyatli yaratildi!")
-    except Exception as e:
-        logging.error(f"Jadvallarni yaratishda xatolik yuz berdi: {e}")
+    # 1. PostgreSQL jadvallarini xavfsiz tekshirish va yaratish
+    if engine and Base:
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logging.info("Barcha baza jadvallari muvaffaqiyatli tekshirildi.")
+        except Exception as e:
+            logging.error(f"Jadvallarni yaratishda xato yuz berdi: {e}")
+    else:
+        logging.warning("DATABASE ENGINE yoki BASE topilmadi, jadvallar avtomatik yaratilmadi.")
 
-    # 3. Redis ulanishi (Parolni xavfsiz va dinamik o'qish)
+    # 2. Redis ulanishi (OS darajasida xavfsiz o'qish)
     redis_password = os.environ.get("REDIS_PASSWORD") or os.environ.get("REDISPASSWORD") or getattr(settings, "REDIS_PASSWORD", None)
 
     redis = Redis(
