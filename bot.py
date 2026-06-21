@@ -6,14 +6,9 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
 
-# PostgreSQL uchun kerakli narsalarni yuklaymiz
-try:
-    from app.database import engine, Base 
-except ImportError:
-    try:
-        from app.db import engine, Base
-    except ImportError:
-        engine, Base = None, None
+# 1. To'g'ri joydan engine va Base'ni import qilamiz
+from app.database import engine
+from app.database.models import Base  # Modellaringiz turgan Base'ni ulaymiz
 
 from app.config import settings
 from app.handlers import start, listing, admin, profile
@@ -26,28 +21,15 @@ logging.basicConfig(
 )
 
 async def main():
-    # 1. SQL jadvalini majburiy ravishda xom SQL buyrug'i bilan yaratish
-    if engine:
-        try:
-            from sqlalchemy import text
-            async with engine.begin() as conn:
-                await conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS users (
-                        id SERIAL PRIMARY KEY,
-                        telegram_id BIGINT UNIQUE NOT NULL,
-                        username VARCHAR(255),
-                        full_name VARCHAR(255),
-                        phone VARCHAR(50),
-                        referrer_id BIGINT,
-                        is_premium BOOLEAN DEFAULT FALSE,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """))
-            logging.info("PostgreSQL 'users' jadvali majburan tekshirildi/yaratildi!")
-        except Exception as e:
-            logging.error(f"Jadval yaratishda SQL xatosi: {e}")
+    # 2. Baza jadvallarini avtomatik yaratish (Modellarni aniq ko'rgan holatda)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logging.info("Barcha ma'lumotlar bazasi jadvallari (users, listings...) muvaffaqiyatli yaratildi!")
+    except Exception as e:
+        logging.error(f"Jadvallarni yaratishda xatolik yuz berdi: {e}")
 
-    # 2. Redis ulanishi (OS darajasida xavfsiz va dinamik o'qish)
+    # 3. Redis ulanishi (Parolni xavfsiz va dinamik o'qish)
     redis_password = os.environ.get("REDIS_PASSWORD") or os.environ.get("REDISPASSWORD") or getattr(settings, "REDIS_PASSWORD", None)
 
     redis = Redis(
@@ -82,3 +64,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
