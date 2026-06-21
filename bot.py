@@ -16,7 +16,12 @@ logging.basicConfig(
 
 async def main():
     # Redis ulanishi
-    redis = Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, decode_responses=True)
+        redis = Redis(
+        host=settings.REDIS_HOST, 
+        port=settings.REDIS_PORT, 
+        password=getattr(settings, "REDIS_PASSWORD", None), 
+        decode_responses=True
+        )
     storage = RedisStorage(redis)
 
     # Bot va Dispatcher obyektlari
