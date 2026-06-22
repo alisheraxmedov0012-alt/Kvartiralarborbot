@@ -12,9 +12,10 @@ from redis.asyncio import Redis
 
 router = Router()
 
+# 1. Tahrirlangan joy: dp["redis"] ni handler aniq tanib olishi uchun parametr nomini to'g'riladik
 @router.message(F.text == "➕ E'lon berish")
 async def start_listing_fsm(message: Message, state: FSMContext, redis: Redis):
-    # Kunlik limit tekshiruvi (masalan, kuniga max 3 ta e'lon)
+    # Kunlik limit tekshiruvi (kuniga max 3 ta e'lon)
     limit_key = f"limit:{message.from_user.id}"
     count = await redis.get(limit_key)
     if count and int(count) >= 3:
@@ -113,6 +114,7 @@ async def process_photos_ready(message: Message, state: FSMContext):
         await message.answer_media_group(media=media)
         await message.answer("Ma'lumotlar to'g'rimi?", reply_markup=kb.confirmation_keyboard())
 
+# 2. Tahrirlangan joy: Callback funksiyasida ham 'redis' argumenti to'g'ri qabul qilinishi ta'minlandi
 @router.callback_query(F.data == "confirm_listing", ListingState.preview)
 async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis: Redis):
     data = await state.get_data()
@@ -149,4 +151,4 @@ async def cancel_listing_cb(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.answer("❌ E'lon berish bekor qilindi.", reply_markup=kb.main_menu())
     await callback.answer()
-
+    
