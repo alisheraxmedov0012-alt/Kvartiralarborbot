@@ -59,10 +59,8 @@ async def process_price(message: Message, state: FSMContext):
 
 @router.message(ListingState.phone)
 async def process_phone(message: Message, state: FSMContext):
-    # Har ehtimolga qarshi ikkala kalit bilan ham saqlaymiz:
-    await state.update_data(phone=message.text)
-    await state.update_data(phone_number=message.text)
-    
+    # Bu yerda service fayli qaysi nomni so'rasa ham hammasini kafolatlab saqlaymiz
+    await state.update_data(phone=message.text, phone_number=message.text)
     await state.set_state(ListingState.description)
     await message.answer("Tavsif yozing (Remonti, jihozlari haqida):")
 
@@ -83,7 +81,6 @@ async def process_photos(message: Message, state: FSMContext):
     photos.append(message.photo[-1].file_id)
     await state.update_data(photos=photos)
     
-    # Har safar rasm kelganda foydalanuvchiga hisobot beradi (Albom tashlasa ham chalg'itmaydi)
     if len(photos) == 1 or len(photos) % 3 == 0:
         await message.answer(f"📸 {len(photos)} ta rasm yuklandi. Tugagach, 'Tayyor' deb yozing.")
 
@@ -117,10 +114,23 @@ async def process_photos_ready(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "confirm_listing", ListingState.preview)
 async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
-    data = await state.get_data()
-    photos = data['photos']
+    raw_data = await state.get_data()
+    photos = raw_data['photos']
     
-    listing = await ListingService.save_new_listing(callback.from_user.id, data, photos)
+    # MUHIM: Service qanday nom kutishidan qat'iy nazar ikkala kalitni ham majburiy o'tkazamiz
+    final_data = {
+        "region": raw_data.get("region"),
+        "district": raw_data.get("district"),
+        "address": raw_data.get("address"),
+        "rooms": raw_data.get("rooms"),
+        "floor": raw_data.get("floor"),
+        "price": raw_data.get("price"),
+        "phone": raw_data.get("phone") or raw_data.get("phone_number"),
+        "phone_number": raw_data.get("phone") or raw_data.get("phone_number"),
+        "description": raw_data.get("description")
+    }
+    
+    listing = await ListingService.save_new_listing(callback.from_user.id, final_data, photos)
     
     limit_key = f"limit:{callback.from_user.id}"
     await redis.incr(limit_key)
@@ -134,8 +144,8 @@ async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
                 f"🆕 Yangi e'lon\n\n"
                 f"Foydalanuvchi: {callback.from_user.full_name}\n"
                 f"ID: {callback.from_user.id}\n\n"
-                f"🏠 {data['rooms']} xonali kvartira\n"
-                f"💰 Narxi: {data['price']}"
+                f"🏠 {final_data['rooms']} xonali kvartira\n"
+                f"💰 Narxi: {final_data['price']}"
             )
             await callback.bot.send_message(chat_id=admin_id, text=admin_msg, reply_markup=admin_decision_keyboard(listing.id))
         except Exception:
@@ -150,4 +160,3 @@ async def cancel_listing_cb(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("❌ E'lon berish bekor qilindi.", reply_markup=kb.main_menu())
     await callback.answer()
     
-                        
