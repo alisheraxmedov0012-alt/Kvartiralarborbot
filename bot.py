@@ -1,13 +1,14 @@
 import asyncio
 import logging
 import os
+import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import create_engine
 
-# 1. Base va barcha modellarni majburan xotiraga yuklaymiz (Shunda SQLAlchemy jadvallarni aniq yaratadi)
+# 1. Base va modellarni xotiraga majburiy yuklash
 try:
     from app.database.models import Base, User, Listing, Photo, AdminSetting
 except ImportError:
@@ -27,26 +28,31 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
-async def main():
-    # 2. DATABASE_URL ni o'qish va asenkron formatga o'tkazish
-    database_url = os.environ.get("DATABASE_URL") or getattr(settings, "DATABASE_URL", None)
-    if database_url and database_url.startswith("postgresql://"):
-        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-
-    # 3. Jadvallarni majburiy ravishda yaratish
-    if database_url:
-        try:
-            engine = create_async_engine(database_url, echo=False)
-            async with engine.begin() as conn:
-                # Modellarni aniq ko'rgani uchun endi 'users', 'listings' hammasini ochadi
-                await conn.run_sync(Base.metadata.create_all)
-            logging.info("PostgreSQL jadvallari (users, listings...) muvaffaqiyatli tekshirildi/yaratildi!")
-        except Exception as e:
-            logging.error(f"Ma'lumotlar bazasi jadvallarini yaratishda xato: {e}")
+# 2. XAVFSIZLIK MEXANIZMI: Bot elementlari yuklanishidan oldin jadvallarni sinxron qurish
+database_url = os.environ.get("DATABASE_URL") or getattr(settings, "DATABASE_URL", None)
+if database_url:
+    # Agar asenkron havola bo'lsa, sinxron yaratish uchun to'g'rilaymiz
+    if "postgresql+asyncpg://" in database_url:
+        sync_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
     else:
-        logging.error("DATABASE_URL topilmadi!")
+        sync_url = database_url if database_url.startswith("postgresql://") else None
+    
+    if sync_url:
+        try:
+            # Hech qanday asenkron to'siqsiz, to'g'ridan-to'g'ri bazada jadvallarni quradi
+            sync_engine = create_engine(sync_url)
+            Base.metadata.create_all(sync_engine)
+            logging.info("Sinxron tekshiruv: Barcha jadvallar (users, listings...) bazada tayyor!")
+        except Exception as e:
+            logging.error(f"Sinxron jadvallarni yaratishda xato (Bot baribir ishga tushadi): {e}")
 
-    # 4. Redis ulanishi
+async def main():
+    # DATABASE_URL ni asenkron engine uchun sozlash
+    async_url = os.environ.get("DATABASE_URL") or getattr(settings, "DATABASE_URL", None)
+    if async_url and async_url.startswith("postgresql://"):
+        async_url = async_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    # 3. Redis ulanishi
     redis_password = os.environ.get("REDIS_PASSWORD") or os.environ.get("REDISPASSWORD") or getattr(settings, "REDIS_PASSWORD", None)
     redis = Redis(
         host=settings.REDIS_HOST,
@@ -59,7 +65,7 @@ async def main():
     bot = Bot(token=settings.BOT_TOKEN)
     dp = Dispatcher(storage=storage)
 
-    # Middleware va Routerlar
+    # Middleware va Routerlarni ulash
     dp.message.middleware(AntiSpamMiddleware(redis=redis, limit=2))
     dp.include_router(start.router)
     dp.include_router(listing.router)
