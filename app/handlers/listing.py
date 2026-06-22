@@ -79,12 +79,16 @@ async def process_description(message: Message, state: FSMContext):
 async def process_photos(message: Message, state: FSMContext):
     data = await state.get_data()
     photos = data.get('photos', [])
+    
     if len(photos) >= 10:
-        return await message.answer("Maksimal 10 ta rasm yuklash mumkin!")
+        return
     
     photos.append(message.photo[-1].file_id)
     await state.update_data(photos=photos)
-    await message.answer(f"{len(photos)}-rasm qabul qilindi. Yana yuborishingiz mumkin yoki 'Tayyor' deb yozing.")
+    
+    # Faqat birinchi rasmda va har 3 ta rasm yig'ilganda xabar beradi (Albom tashlanganda chalg'itmaydi)
+    if len(photos) == 1 or len(photos) % 3 == 0:
+        await message.answer(f"📸 {len(photos)} ta rasm yuklandi. Rasmlar tugagan bo'lsa, 'Tayyor' deb yozing.")
 
 @router.message(ListingState.photos, F.text.casefold() == "tayyor")
 async def process_photos_ready(message: Message, state: FSMContext):
