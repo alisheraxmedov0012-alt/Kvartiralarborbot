@@ -59,7 +59,6 @@ async def process_price(message: Message, state: FSMContext):
 
 @router.message(ListingState.phone)
 async def process_phone(message: Message, state: FSMContext):
-    # Bu yerda 'phone' kaliti bazaga to'g'ri borishi ta'minlandi
     await state.update_data(phone=message.text)
     await state.set_state(ListingState.description)
     await message.answer("Tavsif yozing (Remonti, jihozlari haqida):")
@@ -80,6 +79,10 @@ async def process_photos(message: Message, state: FSMContext):
     
     photos.append(message.photo[-1].file_id)
     await state.update_data(photos=photos)
+    
+    # Har safar rasm kelganda foydalanuvchiga hisobot beradi (Albom tashlasa ham chalg'itmaydi)
+    if len(photos) == 1 or len(photos) % 3 == 0:
+        await message.answer(f"📸 {len(photos)} ta rasm yuklandi. Tugagach, 'Tayyor' deb yozing.")
 
 @router.message(ListingState.photos, F.text.casefold() == "tayyor")
 async def process_photos_ready(message: Message, state: FSMContext):
@@ -143,4 +146,5 @@ async def cancel_listing_cb(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.answer("❌ E'lon berish bekor qilindi.", reply_markup=kb.main_menu())
     await callback.answer()
+    
                         
