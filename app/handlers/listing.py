@@ -4,8 +4,6 @@ from aiogram.fsm.context import FSMContext
 from app.states.listing import ListingState
 from app.keyboards import user as kb
 from app.services.listing_service import ListingService
-from app.database.session import async_session
-from app.database import queries
 from app.config import settings
 from app.keyboards.admin import admin_decision_keyboard
 
@@ -61,6 +59,7 @@ async def process_price(message: Message, state: FSMContext):
 
 @router.message(ListingState.phone)
 async def process_phone(message: Message, state: FSMContext):
+    # Bu yerda 'phone' kaliti bazaga to'g'ri borishi ta'minlandi
     await state.update_data(phone=message.text)
     await state.set_state(ListingState.description)
     await message.answer("Tavsif yozing (Remonti, jihozlari haqida):")
@@ -144,4 +143,4 @@ async def cancel_listing_cb(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.answer("❌ E'lon berish bekor qilindi.", reply_markup=kb.main_menu())
     await callback.answer()
-    
+                        
