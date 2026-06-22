@@ -67,6 +67,9 @@ async def main():
 
     # Middleware va Routerlarni ulash
     dp.message.middleware(AntiSpamMiddleware(redis=redis, limit=2))
+
+    dp["redis"] = redis
+    
     dp.include_router(start.router)
     dp.include_router(listing.router)
     dp.include_router(admin.router)
