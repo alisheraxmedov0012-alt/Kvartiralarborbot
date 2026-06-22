@@ -1,4 +1,4 @@
-import asyncio
+oʻimport asyncio
 import logging
 import os
 import sys
