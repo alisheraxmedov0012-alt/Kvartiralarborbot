@@ -8,7 +8,7 @@ from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
 from sqlalchemy import create_engine
 
-# 1. Base va modellarni xotiraga majburiy yuklash
+# 1. Base va modellarni xotiraga yuklash
 try:
     from app.database.models import Base, User, Listing, Photo, AdminSetting
 except ImportError:
@@ -21,14 +21,13 @@ except ImportError:
 
 from app.config import settings
 from app.handlers import start, listing, admin, profile
-from app.middlewares.antispan import AntiSpanMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
-# 2. XAVFSIZLIK MEXANIZMI: Sinxron jadval tekshiruvi
+# 2. XAVFSIZLIK MEXANIZMI: Jadvallarni tekshirish
 database_url = os.environ.get("DATABASE_URL") or getattr(settings, "DATABASE_URL", None)
 if database_url:
     if "postgresql+asyncpg://" in database_url:
@@ -40,17 +39,12 @@ if database_url:
         try:
             sync_engine = create_engine(sync_url)
             Base.metadata.create_all(sync_engine)
-            logging.info("Sinxron tekshiruv: Barcha jadvallar (users, listings...) mavjud.")
+            logging.info("Sinxron tekshiruv muvaffaqiyatli.")
         except Exception as e:
-            logging.error(f"Sinxron jadvallarni yaratishda xato: {e}")
+            logging.error(f"Jadvallarda xato: {e}")
 
 async def main():
-    # DATABASE url ni asenkron ulash
-    database_url = os.environ.get("DATABASE_URL") or getattr(settings, "DATABASE_URL", None)
-    if database_url and database_url.startswith("postgresql://"):
-        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://")
-
-    # 3. Redis ulanishi
+    # Redis ulanishi
     redis_password = os.environ.get("REDIS_PASSWORD") or os.environ.get("REDISPASSWORD")
     redis = Redis(
         host=settings.REDIS_HOST,
@@ -63,9 +57,20 @@ async def main():
     bot = Bot(token=settings.BOT_TOKEN)
     dp = Dispatcher(storage=storage)
 
-    # Middlewaralarni ulash (Xabarlar va Tugmalar uchun ham)
-    dp.message.middleware(AntiSpanMiddleware(redis=redis, limit=2))
-    dp.callback_query.middleware(AntiSpanMiddleware(redis=redis, limit=2))
+    # 3. ANTISPANNI ERRORSIZ, XAVFSIZ ULASH
+    try:
+        from app.middlewares.antispan import AntiSpanMiddleware
+        dp.message.middleware(AntiSpanMiddleware(redis=redis, limit=2))
+        dp.callback_query.middleware(AntiSpanMiddleware(redis=redis, limit=2))
+        logging.info("AntiSpanMiddleware muvaffaqiyatli ulandi.")
+    except ImportError:
+        try:
+            from app.middleware.antispan import AntiSpanMiddleware
+            dp.message.middleware(AntiSpanMiddleware(redis=redis, limit=2))
+            dp.callback_query.middleware(AntiSpanMiddleware(redis=redis, limit=2))
+            logging.info("AntiSpanMiddleware (singular path) ulandi.")
+        except ImportError:
+            logging.warning("⚠️ Antispan fayli topilmadi! Bot antispan-siz xavfsiz rejimda ishlamoqda.")
 
     # Routerlarni ulash
     dp.include_router(start.router)
@@ -76,7 +81,6 @@ async def main():
     logging.info("Bot muvaffaqiyatli ishga tushdi!")
 
     try:
-        # DIQQAT: Pollingga redisni argument sifatida uzatamiz!
         await dp.start_polling(bot, redis=redis)
     finally:
         await bot.session.close()
