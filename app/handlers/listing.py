@@ -3,9 +3,10 @@ from aiogram.types import Message, CallbackQuery, InputMediaPhoto
 from aiogram.fsm.context import FSMContext
 from app.states.listing import ListingState
 from app.keyboards import user as kb
-from app.services.listing_service import ListingService
 from app.config import settings
 from app.keyboards.admin import admin_decision_keyboard
+from app.database.session import async_session
+from sqlalchemy import text
 
 router = Router()
 
@@ -59,7 +60,6 @@ async def process_price(message: Message, state: FSMContext):
 
 @router.message(ListingState.phone)
 async def process_phone(message: Message, state: FSMContext):
-    # Bu yerda service fayli qaysi nomni so'rasa ham hammasini kafolatlab saqlaymiz
     await state.update_data(phone=message.text, phone_number=message.text)
     await state.set_state(ListingState.description)
     await message.answer("Tavsif yozing (Remonti, jihozlari haqida):")
@@ -92,13 +92,14 @@ async def process_photos_ready(message: Message, state: FSMContext):
     
     await state.set_state(ListingState.preview)
     
+    user_phone = data.get("phone") or data.get("phone_number") or "Kiritilmagan"
     preview_text = (
         f"🏠 {data['rooms']} xonali kvartira\n\n"
         f"📍 {data['region']}\n"
         f"📌 {data['district']}, {data['address']}\n\n"
         f"🏢 {data['floor']}\n"
         f"💰 {data['price']}\n\n"
-        f"📞 {data['phone']}\n\n"
+        f"📞 {user_phone}\n\n"
         f"📝 {data['description']}"
     )
     
@@ -114,23 +115,31 @@ async def process_photos_ready(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "confirm_listing", ListingState.preview)
 async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
-    raw_data = await state.get_data()
-    photos = raw_data['photos']
+    data = await state.get_data()
     
-    # MUHIM: Service qanday nom kutishidan qat'iy nazar ikkala kalitni ham majburiy o'tkazamiz
-    final_data = {
-        "region": raw_data.get("region"),
-        "district": raw_data.get("district"),
-        "address": raw_data.get("address"),
-        "rooms": raw_data.get("rooms"),
-        "floor": raw_data.get("floor"),
-        "price": raw_data.get("price"),
-        "phone": raw_data.get("phone") or raw_data.get("phone_number"),
-        "phone_number": raw_data.get("phone") or raw_data.get("phone_number"),
-        "description": raw_data.get("description")
-    }
+    user_phone = data.get("phone") or data.get("phone_number") or "Kiritilmagan"
     
-    listing = await ListingService.save_new_listing(callback.from_user.id, final_data, photos)
+    # Ma'lumotlarni to'g'ridan-to'g'ri SQL so'rov orqali saqlash
+    async with async_session() as session:
+        query = text("""
+            INSERT INTO listings (user_id, region, district, address, rooms, floor, price, phone, description, status)
+            VALUES (:user_id, :region, :district, :address, :rooms, :floor, :price, :phone, :description, 'PENDING')
+            RETURNING id;
+        """)
+        
+        result = await session.execute(query, {
+            "user_id": callback.from_user.id,
+            "region": data.get("region"),
+            "district": data.get("district"),
+            "address": data.get("address"),
+            "rooms": data.get("rooms"),
+            "floor": data.get("floor"),
+            "price": data.get("price"),
+            "phone": user_phone,
+            "description": data.get("description")
+        })
+        listing_id = result.scalar()
+        await session.commit()
     
     limit_key = f"limit:{callback.from_user.id}"
     await redis.incr(limit_key)
@@ -144,10 +153,10 @@ async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
                 f"🆕 Yangi e'lon\n\n"
                 f"Foydalanuvchi: {callback.from_user.full_name}\n"
                 f"ID: {callback.from_user.id}\n\n"
-                f"🏠 {final_data['rooms']} xonali kvartira\n"
-                f"💰 Narxi: {final_data['price']}"
+                f"🏠 {data.get('rooms')} xonali kvartira\n"
+                f"💰 Narxi: {data.get('price')}"
             )
-            await callback.bot.send_message(chat_id=admin_id, text=admin_msg, reply_markup=admin_decision_keyboard(listing.id))
+            await callback.bot.send_message(chat_id=admin_id, text=admin_msg, reply_markup=admin_decision_keyboard(listing_id))
         except Exception:
             pass
             
@@ -159,4 +168,5 @@ async def cancel_listing_cb(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.answer("❌ E'lon berish bekor qilindi.", reply_markup=kb.main_menu())
     await callback.answer()
+    
     
