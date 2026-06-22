@@ -59,7 +59,10 @@ async def process_price(message: Message, state: FSMContext):
 
 @router.message(ListingState.phone)
 async def process_phone(message: Message, state: FSMContext):
+    # Har ehtimolga qarshi ikkala kalit bilan ham saqlaymiz:
     await state.update_data(phone=message.text)
+    await state.update_data(phone_number=message.text)
+    
     await state.set_state(ListingState.description)
     await message.answer("Tavsif yozing (Remonti, jihozlari haqida):")
 
