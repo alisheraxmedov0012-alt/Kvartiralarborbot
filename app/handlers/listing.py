@@ -8,14 +8,11 @@ from app.database.session import async_session
 from app.database import queries
 from app.config import settings
 from app.keyboards.admin import admin_decision_keyboard
-from redis.asyncio import Redis
 
 router = Router()
 
-# 1. Tahrirlangan joy: dp["redis"] ni handler aniq tanib olishi uchun parametr nomini to'g'riladik
 @router.message(F.text == "➕ E'lon berish")
-async def start_listing_fsm(message: Message, state: FSMContext, redis: Redis):
-    # Kunlik limit tekshiruvi (kuniga max 3 ta e'lon)
+async def start_listing_fsm(message: Message, state: FSMContext, redis):
     limit_key = f"limit:{message.from_user.id}"
     count = await redis.get(limit_key)
     if count and int(count) >= 3:
@@ -79,16 +76,11 @@ async def process_description(message: Message, state: FSMContext):
 async def process_photos(message: Message, state: FSMContext):
     data = await state.get_data()
     photos = data.get('photos', [])
-    
     if len(photos) >= 10:
         return
     
     photos.append(message.photo[-1].file_id)
     await state.update_data(photos=photos)
-    
-    # Faqat birinchi rasmda va har 3 ta rasm yig'ilganda xabar beradi (Albom tashlanganda chalg'itmaydi)
-    if len(photos) == 1 or len(photos) % 3 == 0:
-        await message.answer(f"📸 {len(photos)} ta rasm yuklandi. Rasmlar tugagan bo'lsa, 'Tayyor' deb yozing.")
 
 @router.message(ListingState.photos, F.text.casefold() == "tayyor")
 async def process_photos_ready(message: Message, state: FSMContext):
@@ -118,22 +110,19 @@ async def process_photos_ready(message: Message, state: FSMContext):
         await message.answer_media_group(media=media)
         await message.answer("Ma'lumotlar to'g'rimi?", reply_markup=kb.confirmation_keyboard())
 
-# 2. Tahrirlangan joy: Callback funksiyasida ham 'redis' argumenti to'g'ri qabul qilinishi ta'minlandi
 @router.callback_query(F.data == "confirm_listing", ListingState.preview)
-async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis: Redis):
+async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
     data = await state.get_data()
     photos = data['photos']
     
     listing = await ListingService.save_new_listing(callback.from_user.id, data, photos)
     
-    # Limitni oshirish
     limit_key = f"limit:{callback.from_user.id}"
     await redis.incr(limit_key)
-    await redis.expire(limit_key, 86400) # 1 kun
+    await redis.expire(limit_key, 86400)
     
     await callback.message.answer("✅ E'loningiz qabul qilindi va tahlilga yuborildi. Admin tasdiqlaganidan so'ng kanalga chiqadi.")
     
-    # Adminlarga xabar berish
     for admin_id in settings.admins:
         try:
             admin_msg = (
