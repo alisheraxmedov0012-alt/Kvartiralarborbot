@@ -8,14 +8,17 @@ class ChannelService:
     async def post_to_channel(bot: Bot, listing: Listing, photos: list):
         vip_tag = "⭐ VIP " if listing.is_vip else "🏠 "
         
-        # Kanalga chiqadigan chiroyli va to'liq xabar matni
+        # Har qanday holatda ham raqamni to'g'ri aniqlash (phone yoki phone_number)
+        user_phone = getattr(listing, 'phone', None) or getattr(listing, 'phone_number', None) or "Kiritilmagan"
+        
+        # Kanalga chiqadigan chiroyli xabar matni
         caption = (
             f"{vip_tag}{listing.rooms} xonali kvartira\n\n"
             f"📍 Viloyat: {listing.region}\n"
             f"📌 Tuman/Manzil: {listing.district}, {listing.address}\n"
             f"🏢 Qavat: {listing.floor}\n"
             f"💰 Narx: {listing.price}\n"
-            f"📞 Tel: {listing.phone}\n\n"
+            f"📞 Tel: {user_phone}\n\n"
             f"📝 Tavsif: {listing.description}"
         )
         
