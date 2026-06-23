@@ -36,7 +36,7 @@ async def create_listing(session: AsyncSession, user_id: int, data: dict, photos
     return listing
 
 async def get_user_listings(session: AsyncSession, tg_id: int):
-    stmt = select(Listing).join(User).where(User.telegram_id == tg_id).order_by(Listing.id.desc())
+    stmt = select(Listing).where(Listing.user_id == tg_id).order_by(Listing.id.desc())
     res = await session.execute(stmt)
     return res.scalars().all()
 
