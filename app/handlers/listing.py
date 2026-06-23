@@ -73,16 +73,33 @@ async def process_description(message: Message, state: FSMContext):
 
 @router.message(ListingState.photos, F.photo)
 async def process_photos(message: Message, state: FSMContext):
-    data = await state.get_data()
-    photos = data.get('photos', [])
-    if len(photos) >= 10:
-        return
+    import asyncio
+    if not hasattr(router, 'photo_lock'):
+        router.photo_lock = asyncio.Lock()
+        
+    async with router.photo_lock:
+        data = await state.get_data()
+        photos = data.get('photos', [])
+        if not isinstance(photos, list):
+            photos = []
+            
+        if len(photos) >= 10:
+            return
+            
+        photos.append(message.photo[-1].file_id)
+        await state.update_data(photos=photos)
+        current_count = len(photos)
+
+    await asyncio.sleep(0.5)
+    latest_data = await state.get_data()
+    actual_count = len(latest_data.get('photos', []))
     
-    photos.append(message.photo[-1].file_id)
-    await state.update_data(photos=photos)
-    
-    if len(photos) == 1 or len(photos) % 3 == 0:
-        await message.answer(f"📸 {len(photos)} ta rasm yuklandi. Tugagach, 'Tayyor' deb yozing.")
+    if current_count == actual_count:
+        await message.answer(
+            f"📸 Jami {actual_count} ta rasm muvaffaqiyatli qabul qilindi.\n"
+            f"Yana rasm qo'shishingiz mumkin (Maksimum 10 ta).\n"
+            f"Rasmlar tugagan bo'lsa, 'Tayyor' so'zini yozib yuboring."
+        )
 
 @router.message(ListingState.photos, F.text.casefold() == "tayyor")
 async def process_photos_ready(message: Message, state: FSMContext):
