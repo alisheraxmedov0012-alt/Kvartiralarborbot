@@ -182,12 +182,12 @@ async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
 
 @router.callback_query(F.data == "confirm_listing", ListingState.preview)
 async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
-    data = await state.get_data()
+        data = await state.get_data()
     
-    # Rasmlar ro'yxatini juda qat'iy tekshirib olamiz
-    photos = data.get('photos', [])
+    # Ham 'photo', ham 'photos' kalitlarini tekshiramiz (Xato qilmaslik uchun)
+    photos = data.get("photo") or data.get("photos") or []
     if not isinstance(photos, list):
-        photos = []
+        photos = [photos] if photos else []
         
     user_phone = data.get("phone") or data.get("phone_number") or "Kiritilmagan"
     
