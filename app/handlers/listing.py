@@ -183,8 +183,12 @@ async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
 @router.callback_query(F.data == "confirm_listing", ListingState.preview)
 async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
     data = await state.get_data()
-    photos = data.get('photos', [])
     
+    # Rasmlar ro'yxatini juda qat'iy tekshirib olamiz
+    photos = data.get('photos', [])
+    if not isinstance(photos, list):
+        photos = []
+        
     user_phone = data.get("phone") or data.get("phone_number") or "Kiritilmagan"
     
     # 1. Ma'lumotlarni bazaga yozish
@@ -209,7 +213,7 @@ async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
             })
             listing_id = result.scalar()
             
-            # Rasmlarni ham bazaga (photos jadvaliga) saqlash
+            # Agar rasmlar bo'lsa, ularni photos jadvaliga yozamiz
             if photos:
                 for photo_id in photos:
                     photo_query = text("""
@@ -248,26 +252,33 @@ async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
     
     for admin_id in settings.admins:
         try:
-            if photos:
+            # Muhim o'zgarish: Agar rasmlar ro'yxati haqiqatdan bo'sh bo'lmasa
+            if len(photos) > 0:
                 from aiogram.types import InputMediaPhoto
-                media = [InputMediaPhoto(media=photos[0], caption=full_admin_msg)]
+                # Birinchi rasmga matnni (caption) biriktiramiz
+                media = [InputMediaPhoto(media=str(photos[0]), caption=full_admin_msg)]
+                # Qolgan rasmlarni ketma-ket qo'shamiz
                 for p in photos[1:]:
-                    media.append(InputMediaPhoto(media=p))
+                    media.append(InputMediaPhoto(media=str(p)))
                 
+                # Albomni yuboramiz
                 await callback.bot.send_media_group(chat_id=int(admin_id), media=media)
+                # Tugmalarni alohida xabar qilib ostidan chiqaramiz
                 await callback.bot.send_message(
                     chat_id=int(admin_id), 
-                    text="⚙️ Ushbu e'lonni tekshiring:", 
+                    text="⚙️ Tasdiqlash paneli:", 
                     reply_markup=admin_decision_keyboard(listing_id)
                 )
             else:
+                # Agar rasm umuman bo'lmasa, faqat matnni o'zi boradi
                 await callback.bot.send_message(
                     chat_id=int(admin_id), 
                     text=full_admin_msg, 
                     reply_markup=admin_decision_keyboard(listing_id)
                 )
         except Exception as e:
-            logging.error(f"Adminga yuborishda xato: {e}")
+            logging.error(f"Adminga yuborishda asosiy xato: {e}")
+            # Agar albom yuborishda telegram qandaydir sabab bilan xato bersa, bot qotib qolmasdan matnni yetkazadi
             try:
                 await callback.bot.send_message(
                     chat_id=int(admin_id), 
