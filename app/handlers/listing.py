@@ -134,64 +134,14 @@ async def process_photos_ready(message: Message, state: FSMContext):
 async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
     data = await state.get_data()
     
-    user_phone = data.get("phone") or data.get("phone_number") or "Kiritilmagan"
-    
-    # Ma'lumotlarni to'g'ridan-to'g'ri SQL so'rov orqali saqlash
-    async with async_session() as session:
-        query = text("""
-            INSERT INTO listings (user_id, region, district, address, rooms, floor, price, phone, description, status)
-            VALUES (:user_id, :region, :district, :address, :rooms, :floor, :price, :phone, :description, 'PENDING')
-            RETURNING id;
-        """)
-        
-        result = await session.execute(query, {
-            "user_id": callback.from_user.id,
-            "region": data.get("region"),
-            "district": data.get("district"),
-            "address": data.get("address"),
-            "rooms": data.get("rooms"),
-            "floor": data.get("floor"),
-            "price": data.get("price"),
-            "phone": user_phone,
-            "description": data.get("description")
-        })
-        listing_id = result.scalar()
-        await session.commit()
-    
-    limit_key = f"limit:{callback.from_user.id}"
-    await redis.incr(limit_key)
-    await redis.expire(limit_key, 86400)
-    
-    await callback.message.answer("✅ E'loningiz qabul qilindi va tahlilga yuborildi. Admin tasdiqlaganidan so'ng kanalga chiqadi.")
-    
-    for admin_id in settings.admins:
-        try:
-            admin_msg = (
-                f"🆕 Yangi e'lon\n\n"
-                f"Foydalanuvchi: {callback.from_user.full_name}\n"
-                f"ID: {callback.from_user.id}\n\n"
-                f"🏠 {data.get('rooms')} xonali kvartira\n"
-                f"💰 Narxi: {data.get('price')}"
-            )
-            await callback.bot.send_message(chat_id=admin_id, text=admin_msg, reply_markup=admin_decision_keyboard(listing_id))
-        except Exception:
-            pass
-            
-    await state.clear()
-    await callback.answer()
-
-@router.callback_query(F.data == "confirm_listing", ListingState.preview)
-async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
-        data = await state.get_data()
-    
-    # Ham 'photo', ham 'photos' kalitlarini tekshiramiz (Xato qilmaslik uchun)
+    # Rasmlar ro'yxatini photo va photos kalitlaridan xavfsiz ajratib olamiz
     photos = data.get("photo") or data.get("photos") or []
     if not isinstance(photos, list):
         photos = [photos] if photos else []
         
     user_phone = data.get("phone") or data.get("phone_number") or "Kiritilmagan"
     
-    # 1. Ma'lumotlarni bazaga yozish
+    # 1. Ma'lumotlarni bazaga SQL so'rov orqali saqlash
     try:
         async with async_session() as session:
             query = text("""
@@ -213,7 +163,7 @@ async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
             })
             listing_id = result.scalar()
             
-            # Agar rasmlar bo'lsa, ularni photos jadvaliga yozamiz
+            # Agar rasmlar mavjud bo'lsa, ularni photos jadvaliga yozamiz
             if photos:
                 for photo_id in photos:
                     photo_query = text("""
@@ -222,22 +172,25 @@ async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
                     """)
                     await session.execute(photo_query, {
                         "listing_id": listing_id,
-                        "telegram_file_id": photo_id
+                        "telegram_file_id": str(photo_id)
                     })
                     
             await session.commit()
     except Exception as db_err:
+        import logging
         logging.error(f"Bazaga yozishda xato: {db_err}")
         await callback.message.answer("❌ Tizimda xatolik yuz berdi. Qayta urinib ko'ring.")
         await state.clear()
         return
-    
+
+    # Kunlik limitni yangilash qismi
     limit_key = f"limit:{callback.from_user.id}"
     await redis.incr(limit_key)
     await redis.expire(limit_key, 86400)
     
     await callback.message.answer("✅ E'loningiz qabul qilindi va tahlilga yuborildi. Admin tasdiqlaganidan so'ng kanalga chiqadi.")
     
+    # Admin uchun to'liq xabar matni
     full_admin_msg = (
         f"🆕 Yangi e'lon (ID: {listing_id})\n\n"
         f"👤 Foydalanuvchi: {callback.from_user.full_name} (ID: {callback.from_user.id})\n\n"
@@ -250,36 +203,36 @@ async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
         f"📝 Tavsif: {data.get('description')}"
     )
     
+    # Barcha adminlarga xabar yuborish tugmalari bilan birga
     for admin_id in settings.admins:
         try:
-            # Muhim o'zgarish: Agar rasmlar ro'yxati haqiqatdan bo'sh bo'lmasa
             if len(photos) > 0:
                 from aiogram.types import InputMediaPhoto
-                # Birinchi rasmga matnni (caption) biriktiramiz
+                # Birinchi rasm e'lon matni bilan birga boradi
                 media = [InputMediaPhoto(media=str(photos[0]), caption=full_admin_msg)]
-                # Qolgan rasmlarni ketma-ket qo'shamiz
-                for p in photos[1:]:
+                # Qolgan rasmlarni ketma-ket qo'shamiz (maksimal 10 tagacha)
+                for p in photos[1:10]:
                     media.append(InputMediaPhoto(media=str(p)))
                 
-                # Albomni yuboramiz
                 await callback.bot.send_media_group(chat_id=int(admin_id), media=media)
-                # Tugmalarni alohida xabar qilib ostidan chiqaramiz
+                # Tasdiqlash/Rad etish paneli (Tugmalar shu yerda yuboriladi)
                 await callback.bot.send_message(
                     chat_id=int(admin_id), 
                     text="⚙️ Tasdiqlash paneli:", 
                     reply_markup=admin_decision_keyboard(listing_id)
                 )
             else:
-                # Agar rasm umuman bo'lmasa, faqat matnni o'zi boradi
+                # Agar rasm bo'lmasa, faqat matn va tugmalarni yuborish
                 await callback.bot.send_message(
                     chat_id=int(admin_id), 
                     text=full_admin_msg, 
                     reply_markup=admin_decision_keyboard(listing_id)
                 )
         except Exception as e:
-            logging.error(f"Adminga yuborishda asosiy xato: {e}")
-            # Agar albom yuborishda telegram qandaydir sabab bilan xato bersa, bot qotib qolmasdan matnni yetkazadi
+            import logging
+            logging.error(f"Adminga yuborishda xato: {e}")
             try:
+                # Muammo bo'lsa xavfsiz rejimda faqat matn va tugmani qayta jo'natish urinishi
                 await callback.bot.send_message(
                     chat_id=int(admin_id), 
                     text=full_admin_msg, 
