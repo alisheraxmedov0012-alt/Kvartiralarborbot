@@ -171,35 +171,52 @@ async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
     user_phone = data.get("phone") or data.get("phone_number") or "Kiritilmagan"
     
     # 1. Ma'lumotlarni bazaga yozish
-    async with async_session() as session:
-        query = text("""
-            INSERT INTO listings (user_id, region, district, address, rooms, floor, price, phone, description, status)
-            VALUES (:user_id, :region, :district, :address, :rooms, :floor, :price, :phone, :description, 'PENDING')
-            RETURNING id;
-        """)
-        
-        result = await session.execute(query, {
-            "user_id": callback.from_user.id,
-            "region": data.get("region"),
-            "district": data.get("district"),
-            "address": data.get("address"),
-            "rooms": data.get("rooms"),
-            "floor": data.get("floor"),
-            "price": data.get("price"),
-            "phone": user_phone,
-            "description": data.get("description")
-        })
-        listing_id = result.scalar()
-        await session.commit()
+    try:
+        async with async_session() as session:
+            query = text("""
+                INSERT INTO listings (user_id, region, district, address, rooms, floor, price, phone, description, status)
+                VALUES (:user_id, :region, :district, :address, :rooms, :floor, :price, :phone, :description, 'PENDING')
+                RETURNING id;
+            """)
+            
+            result = await session.execute(query, {
+                "user_id": callback.from_user.id,
+                "region": data.get("region"),
+                "district": data.get("district"),
+                "address": data.get("address"),
+                "rooms": data.get("rooms"),
+                "floor": data.get("floor"),
+                "price": data.get("price"),
+                "phone": user_phone,
+                "description": data.get("description")
+            })
+            listing_id = result.scalar()
+            
+            # Rasmlarni ham bazaga (photos jadvaliga) saqlash
+            if photos:
+                for photo_id in photos:
+                    photo_query = text("""
+                        INSERT INTO photos (listing_id, telegram_file_id)
+                        VALUES (:listing_id, :telegram_file_id);
+                    """)
+                    await session.execute(photo_query, {
+                        "listing_id": listing_id,
+                        "telegram_file_id": photo_id
+                    })
+                    
+            await session.commit()
+    except Exception as db_err:
+        logging.error(f"Bazaga yozishda xato: {db_err}")
+        await callback.message.answer("❌ Tizimda xatolik yuz berdi. Qayta urinib ko'ring.")
+        await state.clear()
+        return
     
-    # Limitni yangilash
     limit_key = f"limit:{callback.from_user.id}"
     await redis.incr(limit_key)
     await redis.expire(limit_key, 86400)
     
     await callback.message.answer("✅ E'loningiz qabul qilindi va tahlilga yuborildi. Admin tasdiqlaganidan so'ng kanalga chiqadi.")
     
-    # 2. Adminga to'liq ma'lumot va rasmlarni yuborish mantiqi
     full_admin_msg = (
         f"🆕 Yangi e'lon (ID: {listing_id})\n\n"
         f"👤 Foydalanuvchi: {callback.from_user.full_name} (ID: {callback.from_user.id})\n\n"
@@ -215,30 +232,34 @@ async def confirm_listing_cb(callback: CallbackQuery, state: FSMContext, redis):
     for admin_id in settings.admins:
         try:
             if photos:
-                # Agar rasmlar bo'lsa, birinchi rasmga matnni ulab albom qilib yuboramiz
+                from aiogram.types import InputMediaPhoto
                 media = [InputMediaPhoto(media=photos[0], caption=full_admin_msg)]
                 for p in photos[1:]:
                     media.append(InputMediaPhoto(media=p))
                 
                 await callback.bot.send_media_group(chat_id=int(admin_id), media=media)
-                # Tugmalarni rasmlar ostidan alohida xabar qilib yuboramiz (Telegram qoidasi bo'yicha albomga to'g'ridan-to'g'ri tugma ulab bo'lmaydi)
                 await callback.bot.send_message(
                     chat_id=int(admin_id), 
                     text="⚙️ Ushbu e'lonni tekshiring:", 
                     reply_markup=admin_decision_keyboard(listing_id)
                 )
             else:
-                # Agar rasm bo'lmasa, faqat matn va tugmaning o'zini yuboramiz
                 await callback.bot.send_message(
                     chat_id=int(admin_id), 
                     text=full_admin_msg, 
                     reply_markup=admin_decision_keyboard(listing_id)
                 )
         except Exception as e:
-            import logging
             logging.error(f"Adminga yuborishda xato: {e}")
+            try:
+                await callback.bot.send_message(
+                    chat_id=int(admin_id), 
+                    text=full_admin_msg, 
+                    reply_markup=admin_decision_keyboard(listing_id)
+                )
+            except Exception:
+                pass
             
     await state.clear()
     await callback.answer()
-    
     
