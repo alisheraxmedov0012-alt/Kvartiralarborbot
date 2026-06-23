@@ -6,13 +6,16 @@ from aiogram.types import InputMediaPhoto
 class ChannelService:
     @staticmethod
     async def post_to_channel(bot: Bot, listing: Listing, photos: list):
-        vip_tag = "🌟 VIP " if listing.is_vip else "🏠 "
+        vip_tag = "⭐ VIP " if listing.is_vip else "🏠 "
+        
+        # Kanalga chiqadigan chiroyli va to'liq xabar matni
         caption = (
             f"{vip_tag}{listing.rooms} xonali kvartira\n\n"
-            f"📍 {listing.region}\n"
-            f"📌 {listing.district}, {listing.address}\n\n"
-            f"🏢 {listing.floor}-qavat\n"
-            f"💰 {listing.price}\n\n"
+            f"📍 Viloyat: {listing.region}\n"
+            f"📌 Tuman/Manzil: {listing.district}, {listing.address}\n"
+            f"🏢 Qavat: {listing.floor}\n"
+            f"💰 Narx: {listing.price}\n"
+            f"📞 Tel: {listing.phone}\n\n"
             f"📝 Tavsif: {listing.description}"
         )
         
@@ -25,4 +28,4 @@ class ChannelService:
             for p in photos[1:]:
                 media.append(InputMediaPhoto(media=p.telegram_file_id))
             await bot.send_media_group(chat_id=settings.CHANNEL_ID, media=media)
-          
+            
